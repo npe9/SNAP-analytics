@@ -30,17 +30,17 @@ int setup_(int *nx, int *ny, int *nz, int *ng, double *dx, double *dy, double *d
 	while (lock == SEM_FAILED) {
 		sleep(1);
 		lock = sem_open(lock_name, 0);
-	}	
+	}
 	sem_wait(lock);
-	
-	fd = shm_open(filename, O_RDONLY, 0666);	
+
+	fd = shm_open(filename, O_RDONLY, 0666);
 	while (fd < 0){
 		printf("failed to open file\n");
 		sleep(1);
 		fd = shm_open(filename, O_RDONLY, 0666);
 	}
 
-	cte = (struct usda *) mmap(NULL, sizeof(struct usda), PROT_READ, MAP_PRIVATE, fd, 0);	
+	cte = (struct usda *) mmap(NULL, sizeof(struct usda), PROT_READ, MAP_PRIVATE, fd, 0);
 	while(cte->time_loop == 0) {
 		sleep(1);
 		fd = shm_open(filename, O_RDONLY, 0666);
@@ -61,7 +61,7 @@ int setup_(int *nx, int *ny, int *nz, int *ng, double *dx, double *dy, double *d
 	*dx = cte->d[0];
 	*dy = cte->d[1];
 	*dz = cte->d[2];
-	
+
 	return 1;
 }
 
@@ -75,7 +75,7 @@ int shm_allocate_(void **flux, void **v, int *cy, int *fin) {
 
 	for(i=0; i < 4; i++)
 		size1 *= cte->n[i];
- 	
+
 	*flux = mmap(NULL, size1, PROT_READ, MAP_PRIVATE, fd, cte->offset);
 	*v = mmap(NULL, size2, PROT_READ, MAP_PRIVATE, fd, cte->offset + size1);
 

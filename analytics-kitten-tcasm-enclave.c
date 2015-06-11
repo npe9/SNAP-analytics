@@ -5,6 +5,7 @@
 #include <sys/stat.h> 
 #include <fcntl.h>
 #include <unistd.h>
+#include <xemem.h>
 
 struct usda {
 	int outer;
@@ -14,6 +15,8 @@ struct usda {
 	size_t offset;
 	int n[4];
 	double d[3];
+	void *flux;
+	void *v;
 };
 
 sem_t *lock;
@@ -22,35 +25,39 @@ struct usda *cte;
 void *data;
 int fd;
 
-int setup_(int *nx, int *ny, int *nz, int *ng, double *dx, double *dy, double *dz, int *iproc) {
-	sprintf(filename, "/%di.shm", *iproc);
-	sprintf(lock_name, "/sem_lock%d", *iproc);
-
-	lock = sem_open(lock_name, 0);
-	while (lock == SEM_FAILED) {
-		sleep(1);
-		lock = sem_open(lock_name, 0);
-	}	
-	sem_wait(lock);
-	
-	fd = shm_open(filename, O_RDONLY, 0666);	
-	while (fd < 0){
-		printf("failed to open file\n");
-		sleep(1);
-		fd = shm_open(filename, O_RDONLY, 0666);
+int setup_(int *nx, int *ny, int *nz, int *ng, double *dx, double *dy, 
+		double *dz, int *iproc, char *segment) {
+	xemem_segid_t segid;
+	xemem_apid_t apid;
+	struct xemem_addr addr;
+	void *v;
+	segid = xemem_lookup_segid(segment);
+	if(segid < 0) {
+		printf("failed to lookup segment\n");
+		exit(-1);
 	}
+	apid = xemem_get(segid, XEMEM_RDWR);
+	if(apid < 0) {
+		printf("failed to lookup apid for segment %ld\n", segid);
+		exit(-1);
+	}
+	addr.apid = apid;
+	addr.offset = 0;
+	// round up?
 
-	cte = (struct usda *) mmap(NULL, sizeof(struct usda), PROT_READ, MAP_PRIVATE, fd, 0);	
+	cte = (struct usda *)xemem_attach(addr, sizeof(struct usda), NULL);
+	if(cte == NULL) {
+		printf("could not attach to addr apid %lx offset %ld\n", 
+				addr.apid, addr.offset);
+		exit(-1);
+	}
+// I want to check on how signalling versus polling works, we're going to poll
+// now.	
 	while(cte->time_loop == 0) {
-		sleep(1);
-		fd = shm_open(filename, O_RDONLY, 0666);
-		while (fd < 0){
-			printf("failed to open file\n");
-			sleep(1);
-			fd = shm_open(filename, O_RDONLY, 0666);
-		}
-		munmap(cte,  sizeof(struct usda));
-		cte = (struct usda *) mmap(NULL, sizeof(struct usda), PROT_READ, MAP_PRIVATE, fd, 0);
+		// how do you find this?
+		// what I'm doing is actually a signal wait.
+		// we're reopening the shared memory here.
+		// that is not necessary.
 	}
 
 	*nx = cte->n[0];
@@ -61,23 +68,27 @@ int setup_(int *nx, int *ny, int *nz, int *ng, double *dx, double *dy, double *d
 	*dx = cte->d[0];
 	*dy = cte->d[1];
 	*dz = cte->d[2];
-	
+
+	// need to set up the fluxes
 	return 1;
 }
 
-int shm_allocate_(void **flux, void **v, int *cy, int *fin) {
+int allocate_(void **flux, void **v, int *cy, int *fin) {
 	size_t size1 = 8, size2 = 8*cte->n[3];
 	int i;
 
-	sem_wait(lock);
-
-	cte = (struct usda *) mmap(NULL, sizeof(struct usda), PROT_READ, MAP_PRIVATE, fd, 0);
+	// will I need any locking here?
+	// I already have the cte, is it being updated?
 
 	for(i=0; i < 4; i++)
 		size1 *= cte->n[i];
- 	
-	*flux = mmap(NULL, size1, PROT_READ, MAP_PRIVATE, fd, cte->offset);
-	*v = mmap(NULL, size2, PROT_READ, MAP_PRIVATE, fd, cte->offset + size1);
+	// so you are allocating two things here.
+	// but what you're really doing is selecting shared memory.
+	*flux = cte->flux;
+	*v = cte->v;
+
+	//*flux = mmap(NULL, size1, PROT_READ, MAP_PRIVATE, fd, cte->offset);
+	//*v = mmap(NULL, size2, PROT_READ, MAP_PRIVATE, fd, cte->offset + size1);
 
 	*cy = cte->time_loop;
 	*fin = cte->finalized;
@@ -85,15 +96,12 @@ int shm_allocate_(void **flux, void **v, int *cy, int *fin) {
 	return 1;
 }
 
-int unlink_shm_() {
-	munmap(data, cte->size);
-	munmap(cte,  sizeof(struct usda));
+int deallocate_() {
+	printf("unlinking from shared region\n");
 	return 1;
 }
 
-int shm_close_(){
-	shm_unlink(filename);
-	sem_close(lock);
-	sem_unlink(lock_name);
+int close_(){
+	printf("closing\n");
 	return 1;
 }

@@ -27,16 +27,16 @@ PROGRAM analyze
   CHARACTER(len=32) :: arg
 
   type(c_ptr) :: cptr1, cptr2
-
-  CALL MPI_INIT(ierr)
+  ! do we need mpi here?
+  !CALL MPI_INIT(ierr)
 
   root=0;
 
   CALL getarg(1, arg)
   read(arg,*) nproc
 
-  CALL MPI_COMM_SIZE ( MPI_COMM_WORLD, nproc, ierr )
-  CALL MPI_COMM_RANK ( MPI_COMM_WORLD, iproc, ierr )
+  !CALL MPI_COMM_SIZE ( MPI_COMM_WORLD, nproc, ierr )
+  !CALL MPI_COMM_RANK ( MPI_COMM_WORLD, iproc, ierr )
 
   CALL setup(nx, ny, nz, ng, dz, dy, dz, iproc)
 
@@ -44,7 +44,7 @@ PROGRAM analyze
   ALLOCATE( pop(ng), STAT=ierr)
   ALLOCATE( res(ng), STAT=ierr)  
 
-  CALL shm_allocate(cptr1, cptr2, cy, fin)
+  CALL allocate(cptr1, cptr2, cy, fin)
 
   loop: DO WHILE ( fin == 0)
      CALL C_F_POINTER(cptr1, flux, [nx,ny,nz,ng])
@@ -57,20 +57,20 @@ PROGRAM analyze
         pop(g) = SUM(tmp(:,:,:,g))
      END DO
 
-     CALL MPI_REDUCE(pop, res, ng, MPI_REAL8, MPI_SUM, root, MPI_COMM_WORLD, ierr)
+     !CALL MPI_REDUCE(pop, res, ng, MPI_REAL8, MPI_SUM, root, MPI_COMM_WORLD, ierr)
 
      pop = pop/v
-     
+
      IF(iproc == root) THEN
         WRITE ( *,* ) cy,":"
         DO g=1, ng
            WRITE ( *,* ) pop(g)
         END DO
      END IF
-     CALL unlink_shm
-     CALL shm_allocate(cptr1, cptr2, cy, fin)
+     CALL deallocate
+     CALL allocate(cptr1, cptr2, cy, fin)
   END DO loop
-  CALL unlink_shm
-  CALL shm_close
-  CALL MPI_FINALIZE ( ierr )
+  CALL deallocate
+  CALL close
+  !CALL MPI_FINALIZE ( ierr )
 END PROGRAM analyze
